@@ -80,22 +80,22 @@ app.post('/webhook/voice', async (req, res) => {
     
     const twiml = new twilio.twiml.VoiceResponse();
     
-    // Professional greeting with TTS
+    // Connect to media stream immediately for listening
+    const connect = twiml.connect();
+    connect.stream({
+      url: `${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/stream`
+    });
+    
+    // Add a brief pause before greeting
+    twiml.pause({ length: 0.5 });
+    
+    // Professional greeting with TTS (interruptible)
     const greeting = `Hello and welcome to E-Z Rolloff! Thank you for calling us today. We're here to help with all your rolloff dumpster needs. How can we assist you today? You can ask about our pricing, service areas, or if you're ready, we can take your order right now.`;
     
     twiml.say({
       voice: 'alice',
       language: 'en-US'
     }, greeting);
-    
-    // Add a brief pause
-    twiml.pause({ length: 1 });
-    
-    // Connect to media stream for listening
-    const connect = twiml.connect();
-    connect.stream({
-      url: `${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/stream`
-    });
     
     res.type('text/xml');
     res.send(twiml.toString());
