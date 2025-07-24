@@ -85,7 +85,8 @@ app.post('/webhook/voice', async (req, res) => {
     
     twiml.say({
       voice: 'alice',
-      language: 'en-US'
+      language: 'en-US',
+      rate: '0.9'
     }, greeting);
     
     // Use Gather to listen for user input
@@ -182,16 +183,19 @@ app.post('/process-speech', async (req, res) => {
   try {
     const speechResult = req.body.SpeechResult;
     const confidence = req.body.Confidence;
+    const callSid = req.body.CallSid;
     
     console.log('Received speech:', speechResult);
     console.log('Confidence:', confidence);
+    console.log('Call SID:', callSid);
     
     if (!speechResult) {
       // No speech detected, ask again
       const twiml = new twilio.twiml.VoiceResponse();
       twiml.say({
         voice: 'alice',
-        language: 'en-US'
+        language: 'en-US',
+        rate: '0.9'
       }, 'I didn\'t catch that. Could you please repeat how we can help you today?');
       
       const gather = twiml.gather({
@@ -230,14 +234,19 @@ app.post('/process-speech', async (req, res) => {
     
     twiml.say({
       voice: 'alice',
-      language: 'en-US'
+      language: 'en-US',
+      rate: '0.9'
     }, response);
     
-    // Ask if they need anything else
+    // Add natural pause
+    twiml.pause({ length: 0.5 });
+    
+    // Ask if they need anything else (more natural)
     twiml.say({
       voice: 'alice',
-      language: 'en-US'
-    }, 'Is there anything else I can help you with today?');
+      language: 'en-US',
+      rate: '0.9'
+    }, 'What else can I help you with today?');
     
     // Continue listening for more input
     const gather = twiml.gather({
