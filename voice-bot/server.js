@@ -80,22 +80,20 @@ app.post('/webhook/voice', async (req, res) => {
     
     const twiml = new twilio.twiml.VoiceResponse();
     
-    // Connect to media stream immediately for listening
-    const connect = twiml.connect();
-    connect.stream({
-      url: `${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/stream`
-    });
-    
-    // Add a brief pause before greeting
-    twiml.pause({ length: 0.5 });
-    
-    // Professional greeting with TTS (interruptible)
+    // Professional greeting with TTS first
     const greeting = `Hello and welcome to E-Z Rolloff! Thank you for calling us today. We're here to help with all your rolloff dumpster needs. How can we assist you today? You can ask about our pricing, service areas, or if you're ready, we can take your order right now.`;
     
     twiml.say({
       voice: 'alice',
       language: 'en-US'
     }, greeting);
+    
+    // Connect to media stream for continuous listening
+    const connect = twiml.connect();
+    connect.stream({
+      url: `${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/stream`,
+      track: 'both_tracks'
+    });
     
     res.type('text/xml');
     res.send(twiml.toString());
@@ -105,8 +103,10 @@ app.post('/webhook/voice', async (req, res) => {
   }
 });
 
-// WebSocket endpoint for audio streaming
-app.get('/stream', (req, res) => {
+// Media Stream endpoint for audio streaming
+app.post('/stream', (req, res) => {
+  console.log('Media stream connected');
+  
   res.writeHead(200, {
     'Content-Type': 'text/event-stream',
     'Cache-Control': 'no-cache',
@@ -120,6 +120,8 @@ app.get('/stream', (req, res) => {
   // Handle audio data from Twilio
   req.on('data', async (chunk) => {
     try {
+      console.log('Received audio chunk:', chunk.length, 'bytes');
+      
       if (!audioPipeline) {
         res.write(`data: ${JSON.stringify({
           type: 'error',
@@ -132,6 +134,8 @@ app.get('/stream', (req, res) => {
       const transcription = await processAudioChunk(chunk);
       
       if (transcription) {
+        console.log('Transcription:', transcription.text);
+        
         // Send transcription to Make.com
         await sendToMake(transcription);
         
@@ -139,6 +143,7 @@ app.get('/stream', (req, res) => {
         let ttsResponse = null;
         if (transcription.response_needed) {
           ttsResponse = await audioPipeline.generateTTSResponse(transcription.intent, transcription.text);
+          console.log('TTS Response:', ttsResponse);
         }
         
         // Send transcription and TTS response back to client
@@ -156,6 +161,7 @@ app.get('/stream', (req, res) => {
   });
 
   req.on('end', () => {
+    console.log('Media stream ended');
     res.end();
   });
 });
