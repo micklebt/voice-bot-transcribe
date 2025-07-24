@@ -80,7 +80,7 @@ app.post('/webhook/voice', async (req, res) => {
     
     const twiml = new twilio.twiml.VoiceResponse();
     
-    // Professional greeting with TTS first
+    // Professional greeting with TTS
     const greeting = `Hello and welcome to E-Z Rolloff! Thank you for calling us today. We're here to help with all your rolloff dumpster needs. How can we assist you today? You can ask about our pricing, service areas, or if you're ready, we can take your order right now.`;
     
     twiml.say({
@@ -88,12 +88,23 @@ app.post('/webhook/voice', async (req, res) => {
       language: 'en-US'
     }, greeting);
     
-    // Connect to media stream for continuous listening
-    const connect = twiml.connect();
-    connect.stream({
-      url: `${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/stream`,
-      track: 'both_tracks'
+    // Use Gather to listen for user input
+    const gather = twiml.gather({
+      input: 'speech',
+      language: 'en-US',
+      speechTimeout: 'auto',
+      action: `${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/process-speech`,
+      method: 'POST'
     });
+    
+    // If no input is received, repeat the options
+    gather.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, 'Please let us know how we can help you today.');
+    
+    // If gather times out, redirect to process-speech
+    twiml.redirect(`${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/process-speech`);
     
     res.type('text/xml');
     res.send(twiml.toString());
@@ -164,6 +175,87 @@ app.post('/stream', (req, res) => {
     console.log('Media stream ended');
     res.end();
   });
+});
+
+// Endpoint to handle speech processing
+app.post('/process-speech', async (req, res) => {
+  try {
+    const speechResult = req.body.SpeechResult;
+    const confidence = req.body.Confidence;
+    
+    console.log('Received speech:', speechResult);
+    console.log('Confidence:', confidence);
+    
+    if (!speechResult) {
+      // No speech detected, ask again
+      const twiml = new twilio.twiml.VoiceResponse();
+      twiml.say({
+        voice: 'alice',
+        language: 'en-US'
+      }, 'I didn\'t catch that. Could you please repeat how we can help you today?');
+      
+      const gather = twiml.gather({
+        input: 'speech',
+        language: 'en-US',
+        speechTimeout: 'auto',
+        action: `${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/process-speech`,
+        method: 'POST'
+      });
+      
+      twiml.redirect(`${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/process-speech`);
+      
+      res.type('text/xml');
+      res.send(twiml.toString());
+      return;
+    }
+    
+    // Process the speech with OpenAI
+    let response = "I'm sorry, I didn't understand that. Could you please ask about our pricing, service areas, or if you'd like to place an order?";
+    
+    if (audioPipeline) {
+      try {
+        // Analyze intent and generate response
+        const intent = await audioPipeline.analyzeIntent(speechResult);
+        response = await audioPipeline.generateTTSResponse(intent.intent, speechResult);
+        
+        console.log('Intent:', intent.intent);
+        console.log('Response:', response);
+      } catch (error) {
+        console.error('Error processing speech:', error);
+      }
+    }
+    
+    // Create TwiML response
+    const twiml = new twilio.twiml.VoiceResponse();
+    
+    twiml.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, response);
+    
+    // Ask if they need anything else
+    twiml.say({
+      voice: 'alice',
+      language: 'en-US'
+    }, 'Is there anything else I can help you with today?');
+    
+    // Continue listening for more input
+    const gather = twiml.gather({
+      input: 'speech',
+      language: 'en-US',
+      speechTimeout: 'auto',
+      action: `${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/process-speech`,
+      method: 'POST'
+    });
+    
+    twiml.redirect(`${process.env.RENDER_EXTERNAL_URL || `http://localhost:${port}`}/process-speech`);
+    
+    res.type('text/xml');
+    res.send(twiml.toString());
+  } catch (error) {
+    console.error('Error in process-speech:', error);
+    res.status(500).send('Error processing speech');
+  }
 });
 
 // Endpoint to handle TTS responses
